@@ -1,0 +1,411 @@
+---
+title: "Cell Work"
+output: pdf_document
+date: "2023-05-30"
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(ggprism)
+library(car)
+library(multcompView)
+library(dplyr)
+library(psych)
+```
+
+
+```{r load experiment data and data transformation}
+data <- read.csv("HBECdata.csv")
+data <- as.data.frame(data)
+
+pdata <- read.csv("proteins2.csv")
+pdata <- as.data.frame(pdata)
+summary(pdata)
+pdata<-pdata %>% mutate_if(is.numeric, function(x) ifelse(is.na(x), min(x, na.rm = T), x))
+
+il6 <- read.csv("il6.csv")
+pdata <- merge (pdata, il6, by = "sample", all = TRUE)
+
+data$il1 <- (data$il1 - data$X18s)
+data$il6<- (data$il6 - data$X18s)
+data$il8 <- (data$il8 - data$X18s)
+data$hmox1 <- (data$hmox1 - data$X18s)
+
+data$eil1 <- 2^-(data$il1 - mean(data$il1[data$sex== "F" & data$exp =="FA"], na.rm=TRUE))
+data$eil6<- 2^-(data$il6 - mean(data$il6[data$sex== "M" & data$exp =="FA"], na.rm=TRUE))
+data$eil8 <- 2^-(data$il8 - mean(data$il8[data$sex== "F" & data$exp =="O3"], na.rm=TRUE))
+data$ehmox1 <- 2^-(data$hmox1 - mean(data$hmox1[data$sex== "F" & data$exp =="O3"], na.rm=TRUE))
+
+data <- merge(data, pdata, by = "sample" , all.x = TRUE)
+
+gdata <- data
+gdata$sex <- ifelse(gdata$sex == "F", "Female", "Male" )
+gdata$exp <- ifelse(gdata$exp == "FA", "Filtered Air", "Ozone")
+
+summary(data)
+```
+
+#Viability amd Cytotoxicity
+
+```{r Viability and Cytotoxicity}
+"Viability ANOVA and TUKEY"
+describeBy(data,list(data$sex, data$exp) )
+Anova(lm(viability~ exp*sex, data= data), type=3)
+vaov <- aov(viability~ exp*sex, data= data)
+TukeyHSD(vaov)
+
+"Viabilty Boxplot"
+v_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(viability, na.rm = TRUE), sd=sd(viability, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.v <- multcompLetters4(vaov, TukeyHSD(vaov))
+tukey.v
+v.cld <- as.data.frame.list(tukey.v$`exp:sex`)
+v_summary$Tukey <- v.cld$Letters
+
+ggplot(v_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "Viability by Sex and Exposure", x="Groups", y="Proportion of Live Cells", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.8, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  ylim(0, 1)+
+  scale_fill_grey()
+ggsave("viability plot.png", width = 6, height = 4, dpi = 1000)
+
+
+"LDH release ANOVA and TUKEY"
+Anova(lm(ldh~exp*sex, data= data), type=3)
+laov <- aov(ldh~ exp*sex, data= data)
+TukeyHSD(laov)
+"LDH Boxplot"
+l_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(ldh, na.rm = TRUE), sd=sd(ldh, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.l <- multcompLetters4(laov, TukeyHSD(laov))
+tukey.l
+l.cld <- as.data.frame.list(tukey.l$`exp:sex`)
+l_summary$Tukey <- l.cld$Letters
+
+ggplot(l_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "LDH Released by Sex and Exposure", x="Groups", y="Absorbance at 490 nm", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.1, 0.75))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("LDH plot.png", width = 6, height = 4, dpi = 1000)
+
+```
+
+#Gene Expression (Qiagen Arrays in differnt R code)
+```{r}
+"IL-1b ANOVA and TUKEY"
+Anova(lm(eil1~ exp*sex, data= data), type=3)
+ei1aov <- aov(eil1~ exp*sex, data= data)
+TukeyHSD(ei1aov)
+
+"IL-6 Boxplot"
+ei1_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(eil1, na.rm = TRUE), sd=sd(eil1, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.ei1 <- multcompLetters4(ei1aov, TukeyHSD(ei1aov))
+tukey.ei1
+ei1.cld <- as.data.frame.list(tukey.ei1$`exp:sex`)
+ei1_summary$Tukey <- ei1.cld$Letters
+
+ggplot(ei1_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "IL-1b Expression by Sex and Exposure", x="Groups", y="IL-1b Relative Expression (Relative to 18S)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.1, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("IL-1b gene expression plot.png", width = 6, height = 4, dpi = 1000)
+
+
+"IL-6 ANOVA and TUKEY"
+Anova(lm(eil6~ exp*sex, data= data), type=3)
+ei6aov <- aov(eil6~ exp*sex, data= data)
+TukeyHSD(ei6aov)
+
+"IL-6 Boxplot"
+ei6_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(eil6, na.rm = TRUE), sd=sd(eil6, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.ei6 <- multcompLetters4(ei6aov, TukeyHSD(ei6aov))
+tukey.ei6
+ei6.cld <- as.data.frame.list(tukey.ei6$`exp:sex`)
+ei6_summary$Tukey <- ei6.cld$Letters
+
+ggplot(ei6_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "IL-6 Expression by Sex and Exposure", x="Groups", y="IL-6 Relative Expression (Relative to 18S)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.8, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("IL-6 gene expression plot.png", width = 6, height = 4, dpi = 1000)
+
+
+"IL-8 ANOVA and TUKEY"
+Anova(lm(eil8~ exp*sex, data= data), type=3)
+ei8aov <- aov(eil8~ exp*sex, data= data)
+TukeyHSD(ei8aov)
+
+"IL-8 Boxplot"
+ei8_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(eil8, na.rm = TRUE), sd=sd(eil8, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.ei8 <- multcompLetters4(ei8aov, TukeyHSD(ei8aov))
+tukey.ei8
+ei8.cld <- as.data.frame.list(tukey.ei8$`exp:sex`)
+ei8_summary$Tukey <- ei8.cld$Letters
+
+ggplot(ei8_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "IL-8 Expression by Sex and Exposure", x="Groups", y="IL-8 Relative Expression (Relative to 18S)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.1, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("IL-8 gene expression plot.png", width = 6, height = 4, dpi = 1000)
+
+"Heme-Ox 1 ANOVA and TUKEY"
+Anova(lm(ehmox1~ exp*sex, data= data), type=3)
+eho1aov <- aov(ehmox1~ exp*sex, data= data)
+TukeyHSD(eho1aov)
+
+
+"Heme-Ox 1 Boxplot"
+eho1_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(ehmox1, na.rm = TRUE), sd=sd(hmox1, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.eho1 <- multcompLetters4(eho1aov, TukeyHSD(eho1aov))
+tukey.eho1
+eho1.cld <- as.data.frame.list(tukey.eho1$`exp:sex`)
+eho1_summary$Tukey <- eho1.cld$Letters
+
+ggplot(eho1_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "Heme Oxygenase-1 Expression by Sex and Exposure", x="Groups", y="Heme Ox-1 Relative Expression (Relative to 18S)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.1, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("Heme Ox-1 gene expression plot.png", width = 6, height = 4, dpi = 1000)
+
+```
+
+
+
+#Protein Secretion
+```{r}
+"IL-6 ANOVA and TUKEY"
+Anova(lm(il6.y~ exp*sex, data= data), type=3)
+i6aov <- aov(il6.y~ exp*sex, data= data)
+TukeyHSD(i6aov)
+
+"IL-6 Boxplot"
+i6_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(il6.y, na.rm = TRUE), sd=sd(il6.y, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.i6 <- multcompLetters4(i6aov, TukeyHSD(i6aov))
+tukey.i6
+i6.cld <- as.data.frame.list(tukey.i6$`exp:sex`)
+i6_summary$Tukey <- i6.cld$Letters
+
+ggplot(i6_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "IL-6 Secretion by Sex and Exposure", x="Groups", y="IL-6 (pg/mL)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.8, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("IL-6 protein plot.png", width = 6, height = 4, dpi = 1000)
+
+
+"IL8 ANOVA and TUKEY"
+Anova(lm(IL.8~ exp*sex, data= data), type=3)
+i8aov <- aov(IL.8~ exp*sex, data= data)
+TukeyHSD(i8aov)
+
+"IL8 Boxplot"
+i8_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(IL.8, na.rm = TRUE), sd=sd(IL.8, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.i8 <- multcompLetters4(i8aov, TukeyHSD(i8aov))
+tukey.i8
+i8.cld <- as.data.frame.list(tukey.i8$`exp:sex`)
+i8_summary$Tukey <- i8.cld$Letters
+
+ggplot(i8_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "IL-8 Secretion by Sex and Exposure", x="Groups", y="IL-8 (pg/mL)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.8, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_y_log10()+
+  scale_fill_grey()
+ggsave("IL-8 protein plot.png", width = 6, height = 4, dpi = 1000)
+
+
+
+"TNF-R1 ANOVA and TUKEY"
+Anova(lm(sTNF.R1~ exp*sex, data= data), type=3)
+tnfaov <- aov(sTNF.R1~ exp*sex, data= data)
+TukeyHSD(tnfaov)
+
+"TNF-R1 Boxplot"
+tnf_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(sTNF.R1, na.rm = TRUE), sd=sd(sTNF.R1, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.tnf <- multcompLetters4(tnfaov, TukeyHSD(tnfaov))
+tukey.tnf
+tnf.cld <- as.data.frame.list(tukey.tnf$`exp:sex`)
+tnf_summary$Tukey <- tnf.cld$Letters
+
+ggplot(tnf_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "sTNF-R1 Secretion by Sex and Exposure", x="Groups", y="sTNF-R1 (pg/mL)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.8, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("sTNF-R1 protein plot.png", width = 6, height = 4, dpi = 1000)
+
+
+```
+
+
+#Lowly secreted proteins
+```{r}
+"IL20 ANOVA and TUKEY"
+Anova(lm(IL.20~ exp*sex, data= data), type=3)
+i20aov <- aov(IL.20~ exp*sex, data= data)
+TukeyHSD(i20aov)
+
+"IL20 Boxplot"
+i20_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(IL.20, na.rm = TRUE), sd=sd(IL.20, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.i20 <- multcompLetters4(i20aov, TukeyHSD(i20aov))
+tukey.i20
+i20.cld <- as.data.frame.list(tukey.i20$`exp:sex`)
+i20_summary$Tukey <- i20.cld$Letters
+
+ggplot(i20_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "IL-20 Secretion by Sex and Exposure", x="Groups", y="IL-20 (pg/mL)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.8, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("IL-20 protein plot.png", width = 6, height = 4, dpi = 1000)
+
+
+
+"MMP-1 ANOVA and TUKEY"
+Anova(lm(MMP.1~ exp*sex, data= data), type=3)
+mmpaov <- aov(MMP.1~ exp*sex, data= data)
+TukeyHSD(mmpaov)
+
+"MMP-1 Boxplot"
+mmp_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(MMP.1, na.rm = TRUE), sd=sd(MMP.1, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.mmp <- multcompLetters4(mmpaov, TukeyHSD(mmpaov))
+tukey.mmp
+mmp.cld <- as.data.frame.list(tukey.mmp$`exp:sex`)
+mmp_summary$Tukey <- mmp.cld$Letters
+
+ggplot(mmp_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "MMP-1 Secretion by Sex and Exposure", x="Groups", y="MMP-1 (pg/mL)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.8, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("MMP-1 protein plot.png", width = 6, height = 4, dpi = 1000)
+
+
+"IFN-B ANOVA and TUKEY"
+Anova(lm(IFN.B~ exp*sex, data= data), type=3)
+ifnbaov <- aov(IFN.B~ exp*sex, data= data)
+TukeyHSD(ifnbaov)
+
+"IFN-B Boxplot"
+ifnb_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(IFN.B, na.rm = TRUE), sd=sd(IFN.B, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.ifnb <- multcompLetters4(ifnbaov, TukeyHSD(ifnbaov))
+tukey.ifnb
+ifnb.cld <- as.data.frame.list(tukey.ifnb$`exp:sex`)
+ifnb_summary$Tukey <- ifnb.cld$Letters
+
+ggplot(ifnb_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "IFN-B Secretion by Sex and Exposure", x="Groups", y="IFN-B (pg/mL)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.8, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("IFN-B protein plot.png", width = 6, height = 4, dpi = 1000)
+
+
+"TNFSF-12 ANOVA and TUKEY"
+Anova(lm(TNFSF.12~ exp*sex, data= data), type=3)
+tnfsfaov <- aov(TNFSF.12~ exp*sex, data= data)
+TukeyHSD(tnfsfaov)
+
+"TNFSF-12 Boxplot"
+tnfsf_summary <- group_by(gdata, sex, exp) %>%
+  summarise(mean=mean(TNFSF.12, na.rm = TRUE), sd=sd(TNFSF.12, na.rm = TRUE)) %>%
+  arrange(desc(mean))
+tukey.tnfsf <- multcompLetters4(tnfsfaov, TukeyHSD(tnfsfaov))
+tukey.tnfsf
+tnfsf.cld <- as.data.frame.list(tukey.tnfsf$`exp:sex`)
+tnfsf_summary$Tukey <- tnfsf.cld$Letters
+
+ggplot(tnfsf_summary, aes(x = factor(sex), y = mean, color = exp, fill = exp)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "gray25")  +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), position = position_dodge(0.9), width = 0.25, show.legend = FALSE, colour = "gray25")+
+  labs(title= "TNFSF-12 Secretion by Sex and Exposure", x="Groups", y="TNFSF-12 (pg/mL)", fill = "Exposure")+
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(legend.position = c(0.8, 0.85))+
+  geom_text(aes(label=Tukey), position = position_dodge(0.90), size = 3, vjust=-0.8, hjust=-0.5, color = "gray25")+
+  scale_fill_grey()
+ggsave("TNFSF-12 protein plot.png", width = 6, height = 4, dpi = 1000)
+
+```
+
+```{r}
+write.csv(data, file = "data.csv")
+```
+

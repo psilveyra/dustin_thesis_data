@@ -1,0 +1,116 @@
+---
+title: "Dustin Cell Ozone"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-03-28"
+---
+
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("Biobase")
+BiocManager::install("limma")
+require(limma)
+```
+
+```{r load experiment data}
+Expvalues=read.csv("expdata.csv")
+groups=read.csv("groups.csv")
+samplenames=c(groups$ID)
+Expvalues=data.matrix(Expvalues)
+colnames(Expvalues)=samplenames
+mRNAid=read.csv("mRNAlist.csv")
+mRNAid=mRNAid[,1]
+dim(Expvalues)
+Expvalues
+```
+
+```{r}
+mRNAid
+groups$Treatment
+```
+
+
+```{r create matrix and design for all - note that treatments go in alphabetical order}
+require(limma)
+design=model.matrix(~0 + groups$Treatment)
+colnames(design)=c("FFA","FO3","MFA","MO3")
+rownames(design)=groups$ID
+print(design)
+```
+
+
+```{r contrasts}
+fit=lmFit(Expvalues,design)
+contrast.matrix=makeContrasts(MFAvO3= MO3-MFA, FFAvO3= FO3-FFA, MvFFA = FFA-MFA, MvFO3 = FO3-MO3, FAvO3 = (MO3+FO3)-(MFA+FFA), levels=design)
+fit=contrasts.fit(fit,contrast.matrix)
+fit=eBayes(fit, trend = TRUE)
+contrast.matrix
+```
+
+## RESULTS - top tables of mRNA comparisons
+
+# 1) MFAvO3= MO3-MFA
+
+```{r}
+MFAvO3=topTable(fit, coef = "MFAvO3", sort.by="p", adjust.method = "BH", genelist=mRNAid, n=Inf)
+write.csv(MFAvO3, file = "MFAvO3.csv")
+MFAvO3
+volcanoplot(fit, coef = "MFAvO3", style = "p-value")
+```
+
+
+# 2) FFAvO3= FO3-FFA
+
+```{r}
+FFAvO3=topTable(fit, coef = "FFAvO3", sort.by="p", adjust.method = "BH", genelist=mRNAid, n=Inf)
+write.csv(FFAvO3, file = "FFAvO3.csv")
+FFAvO3
+volcanoplot(fit, coef = "FFAvO3", style = "p-value")
+```
+
+# 3) MvFFA = FFA-MFA
+
+```{r}
+MvFFA=topTable(fit, coef = "MvFFA", sort.by="p", adjust.method = "BH", genelist=mRNAid, n=Inf)
+write.csv(MvFFA, file = "MvFFA.csv")
+MvFFA
+volcanoplot(fit, coef = "MvFFA", style = "p-value")
+```
+
+# 4) MvFO3 = FO3-MO3
+
+```{r}
+MvFO3=topTable(fit, coef = "MvFO3", sort.by="p", adjust.method = "BH", genelist=mRNAid, n=Inf)
+write.csv(MvFO3, file = "MvFO3.csv")
+MvFO3
+volcanoplot(fit, coef = "MvFO3", style = "p-value")
+```
+
+# 5) FAvO3 = (MO3+FO3)-(MFA+FFA)
+
+```{r}
+FAvO3=topTable(fit, coef = "FAvO3", sort.by="p", adjust.method = "BH", genelist=mRNAid, n=Inf)
+write.csv(FAvO3, file = "FA-O3.csv")
+FAvO3
+volcanoplot(fit, coef = "FAvO3", style = "p-value")
+```
+
+
+# Heatmap
+
+```{r cluster of expression}
+require(NMF)
+aheatmap(Expvalues, color = colorRampPalette(c("blue","white","red"))(20), scale="row", annColors = "Set1", Colv = NULL, Rowv= NULL, annLegend = TRUE, border_color = "black", labCol = groups$Treatment, labRow = mRNAid, filename = "grouped heatmap.png", width = 6, height = 4)
+
+aheatmap(Expvalues, color = colorRampPalette(c("blue","white","red"))(20), scale="row", annColors = "Set1", Colv = NA, Rowv= NA, annLegend = TRUE, border_color = "black", labCol = groups$Treatment, labRow = mRNAid, filename = "ungrouped heatmap.png", width = 6, height = 4)
+```
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
